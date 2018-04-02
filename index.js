@@ -92,7 +92,8 @@ function parseClient(packet, client) {
 server.on('published', function(packet, client) {
 
   // ignore meta (internal) topics
-  if ((packet.topic.split('/')[0] == '$SYS') || (client === undefined)) {
+  if ((packet.topic.split('/')[0] == '$SYS') || (client === undefined) || (client === null)) {
+    console.log('ignoring internal message', packet.topic, client);
     return;
   }
 
@@ -117,7 +118,7 @@ server.on('published', function(packet, client) {
       console.log('Published', packet.topic, data, client.id, client.user, client.passwd ? client.passwd.toString() : 'undefined');
       iota.updateAttrs(idInfo.device, idInfo.tenant, data, {});
     } catch (e) {
-      console.log('Payload is not valid json. Ignoring.', data, e);
+      console.log('Payload is not valid json. Ignoring.', packet.payload.toString(), e);
     }
   }).catch((error) => {
     console.error("Failed to identify device which originated the event. Ignoring. (clientid: %s, username: %s, topic: %s)", client.id, client.user, packet.topic);
@@ -136,3 +137,29 @@ function setup() {
     callback(null, true);
   }
 }
+
+iota.on('device.configure', (event) => {
+  console.log('got configure event')
+  let device_id = event.data.id;
+  delete event.data.id;
+  iota.getDevice(device_id, event.meta.service).then((device) => {
+    let topic = `/${event.meta.service}/${device_id}/config`;
+    for (template in device.attrs){
+      for (attr of device.attrs[template]){
+        if ((attr.label == 'topic-config') && (attr.type == 'meta')) {
+          topic = attr.static_value;
+        }
+      }
+    }
+
+    let message = {
+      'topic': topic,
+      'payload': JSON.stringify(event.data),
+      'qos': 0,
+      'retain': false
+    }
+
+    console.log('will publish', message)
+    server.publish(message, function() {console.log('message out')});
+  })
+})
