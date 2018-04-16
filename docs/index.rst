@@ -1,6 +1,6 @@
-=============
+==============
 iotagent-mosca
-=============
+==============
 
 |License badge| |Docker badge| |Travis badge|
 
