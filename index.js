@@ -14,14 +14,45 @@ var mosca_backend = {
   host: config.backend_host
 };
 
-var moscaSettings = {
-  port: 1883,
-  backend: mosca_backend,
-  persistence: {
-    factory: mosca.persistence.Redis,
-    host: mosca_backend.host
-  }
-};
+var moscaSettings = {};
+
+if (config.mosca_tls === 'true') {
+
+  var SECURE_CERT = '/opt/mosca/certs/mosquitto.crt';
+  var SECURE_KEY =  '/opt/mosca/certs/mosquitto.key';
+  var CA_CERT = '/opt/mosca/certs/ca.crt';
+
+  //Mosca with TLS
+  moscaSettings = {
+    backend: mosca_backend,
+    persistence: {
+      factory: mosca.persistence.Redis,
+      host: mosca_backend.host
+    },
+    type : "mqtts", // important to only use mqtts, not mqtt
+    credentials :
+    { // contains all security information
+        keyPath: SECURE_KEY,
+        certPath: SECURE_CERT,
+        caPaths : [ CA_CERT ],
+        requestCert : true, // enable requesting certificate from clients
+        rejectUnauthorized : true // only accept clients with valid certificate
+    },
+    secure : {
+        port : 8883  // 8883 is the standard mqtts port
+    }
+  }; 
+} else {
+  //Without TLS
+  moscaSettings = {
+    port: 1883,
+    backend: mosca_backend,
+    persistence: {
+      factory: mosca.persistence.Redis,
+      host: mosca_backend.host
+    }
+  };
+}
 
 var server = new mosca.Server(moscaSettings);
 server.on('ready', setup);
@@ -116,7 +147,34 @@ server.on('published', function(packet, client) {
 
       data = JSON.parse(data);
       console.log('Published', packet.topic, data, client.id, client.user, client.passwd ? client.passwd.toString() : 'undefined');
-      iota.updateAttrs(idInfo.device, idInfo.tenant, data, {});
+
+      let metadata;
+      if ("timestamp" in data) {
+        metadata = {
+          timestamp: 0
+        }
+        // If it is a number, just copy it. Probably Unix time.
+        if (typeof data.timestamp === "number") {
+          if (!isNaN(data.timestamp)) {
+            metadata.timestamp = data.timestamp;
+          } else {
+            console.log("Received an invalid timestamp (NaN)");
+            metadata = {};
+          }
+        } else {
+          // If it is a ISO string...
+          const parsed = Date.parse(data.timestamp);
+          if (!isNaN(parsed)) {
+            metadata.timestamp = parsed;
+          } else {
+            // Invalid timestamp.
+            metadata = {};
+          }
+        }
+      } else {
+        metadata = { };
+      }
+      iota.updateAttrs(idInfo.device, idInfo.tenant, data, metadata);
     } catch (e) {
       console.log('Payload is not valid json. Ignoring.', packet.payload.toString(), e);
     }

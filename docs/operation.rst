@@ -103,17 +103,16 @@ The message sent by iotagent-mosca is like this one:
 .. code-block:: json
 
     {
-      "metadata": {
-        "deviceid": "efac",
-        "protocol": "mqtt",
-        "payload": "json"
-      },
-      "attrs": {
-      }
+        "metadata": {
+            "deviceid": "c6ea4b",
+            "tenant": "admin",
+            "timestamp": 1528226137452,
+            "templates": [2, 3]
+        },
+        "attrs": {
+            "humidity": 60
+        }
     }
-
-As previously stated, the "attrs" attribute is the same as the one from
-`DeviceManager Messages`_.
 
 Receiving messages from devices via MQTT
 ========================================
