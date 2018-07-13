@@ -75,10 +75,15 @@ def retrieveCRL():
 if __name__ == '__main__':
     while True:
         try:
+            print("Retrieving CA Chain")
             retrieveCAChain()
+            print("Generating keys")
             generateKeys()
+            print("Generating CSR")
             generateCSR()
+            print("Asking certification signature")
             askCertSign()
+            print("Retrieving CRL")
             retrieveCRL()
             break
         except requests.exceptions.ConnectionError:
