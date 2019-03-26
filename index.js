@@ -1,6 +1,7 @@
 var mosca = require('mosca');
 var iotalib = require('dojot-iotagent');
 var config = require('./config');
+var utils = require('util')
 
 var iota = new iotalib.IoTAgent();
 iota.init();
@@ -15,6 +16,8 @@ var mosca_backend = {
 };
 
 var moscaSettings = {};
+
+var devAliasIdMap = {};
 
 if (config.mosca_tls === 'true') {
 
@@ -74,7 +77,11 @@ function parseClient(packet, client) {
     if (clientid && (typeof clientid == 'string')){
       let data = clientid.match(/^(.*):(.*)$/);
       if (data) {
-        return { tenant: data[1], device: data[2] };
+        if (devAliasIdMap[data[2]]) {
+          return { tenant: data[1], device: devAliasIdMap[data[2]]}
+        } else {
+          return { tenant: data[1], device: data[2] };
+        }
       }
     }
   }
@@ -90,28 +97,19 @@ function parseClient(packet, client) {
   }
 
   let result;
-  if (client.user !== undefined) {
-    console.log('will attempt to use client.user as id source');
-    result = fromString(client.user);
-    if (result){
-      return validate(result);
-    }
-  }
-
-  if (client.id !== undefined) {
-    console.log('will attempt to use client.id as id source');
-    result = fromString(client.id);
-    if (result){
-      return validate(result);
-    }
-  }
 
   // If we're here, it means that neither clientid nor username has been
   // properly set, so fallback to topic-based id scheme
   result = packet.topic.match(/^\/([^/]+)\/([^/]+)/)
   if (result){
     console.log('will attempt to use topic as id source');
-    return validate({tenant: result[1], device: result[2]});
+
+    if (devAliasIdMap[result[2]]) {
+      return validate({tenant: result[1], device: devAliasIdMap[result[2]]});
+    } else {
+      return validate({tenant: result[1], device: result[2]});
+    }
+    
   }
 
   return new Promise((resolve, reject) => {
@@ -174,6 +172,12 @@ server.on('published', function(packet, client) {
       } else {
         metadata = { };
       }
+
+      // Super-fast-workaround
+      if (data.hasOwnProperty("lat")) {
+        data.coordinates = `${data.lat},${data.lng}`;
+      }
+
       iota.updateAttrs(idInfo.device, idInfo.tenant, data, metadata);
     } catch (e) {
       console.log('Payload is not valid json. Ignoring.', packet.payload.toString(), e);
@@ -196,14 +200,40 @@ function setup() {
   }
 }
 
+iota.on('device.create', (event) => {
+  console.log('got create event')
+
+  let device_id = event.data.id;
+
+  device = event.data;
+
+  for (template in device.attrs){
+      for (attr of device.attrs[template]){
+
+        console.log(utils.inspect(attr))
+        if ((attr.label === 'device-name')) {
+          devAliasIdMap[attr.static_value] = device_id
+        }
+      }
+    }
+
+})
+
 iota.on('device.configure', (event) => {
   console.log('got configure event')
   let device_id = event.data.id;
   delete event.data.id;
   iota.getDevice(device_id, event.meta.service).then((device) => {
+
     let topic = `/${event.meta.service}/${device_id}/config`;
     for (template in device.attrs){
       for (attr of device.attrs[template]){
+
+        console.log(utils.inspect(attr))
+        if ((attr.label === 'device-name')) {
+          topic = `/${event.meta.service}/${attr.static_value}/config`
+        }
+
         if ((attr.label == 'topic-config') && (attr.type == 'meta')) {
           topic = attr.static_value;
         }
@@ -221,3 +251,4 @@ iota.on('device.configure', (event) => {
     server.publish(message, function() {console.log('message out')});
   })
 })
+
